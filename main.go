@@ -8,7 +8,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/faizainur/api-idp-catena/routes"
 	"github.com/faizainur/api-idp-catena/utils"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -35,7 +34,7 @@ func main() {
 	r := setupRouter()
 
 	//Start server
-	r.Run(":3000")
+	r.Run(":4000")
 }
 
 func setupRouter() *gin.Engine {
