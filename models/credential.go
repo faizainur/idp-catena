@@ -1,7 +1,7 @@
 package models
 
 type Credential struct {
-	UserUid         string `json:"userUid"  bson:"userUid"  form:"userUid"`
+	UserUid         string `json:"user_uid"  bson:"user_uid"  form:"user_uid"`
 	Email           string `json:"email"  bson:"email"  form:"email"  binding:"required"`
 	Password        string `json:"password,omitempty"  bson:"password"  form:"password"  binding:"required"`
 	CreatedAt       string `json:"created_at,omitempty"  bson:"created_at"  form:"created_at"`
@@ -10,3 +10,9 @@ type Credential struct {
 	CredentialType  string `json:"credential_type,omitempty"  bson:"credential_type"  form:"credential_type"`
 	IsEmailVerified bool   `json:"is_email_verified"  bson:"is_email_verified"  form:"is_email_verified"`
 }
+
+/*
+func (c *Credential) MarshalBinary() ([]byte, error) {
+
+}
+*/

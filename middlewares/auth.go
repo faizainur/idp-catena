@@ -1,15 +1,17 @@
-package authMiddleware
+package middlewares
 
 import (
 	"context"
+	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/faizainur/api-idp-catena/models"
-	"github.com/faizainur/api-idp-catena/services"
-	"github.com/faizainur/api-idp-catena/validator"
+	"github.com/faizainur/idp-catena/models"
+	"github.com/faizainur/idp-catena/services"
+	"github.com/faizainur/idp-catena/validator"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofrs/uuid"
@@ -17,9 +19,11 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-var (
+const (
 	BasicUser string = "basic"
 	BankUser  string = "bank"
+
+	cookieDuration int = 86400
 )
 
 type AuthMiddleware struct {
@@ -133,6 +137,7 @@ func (a *AuthMiddleware) Login() gin.HandlerFunc {
 		data.Password = ""
 
 		var claims = map[string]interface{}{
+			"userUid":        data.UserUid,
 			"email":          data.Email,
 			"credentialType": data.CredentialType,
 			"isAdmin":        data.IsAdmin,
@@ -140,13 +145,41 @@ func (a *AuthMiddleware) Login() gin.HandlerFunc {
 			"exp":            time.Now().Add(5 * time.Minute).Unix(),
 		}
 
+		jwtToken, _ := a.jwtService.GenerateToken(claims)
+
+		// Generate random refersh token
+		refreshToken, _ := uuid.NewV4()
+
+		rdb := redis.NewClient(&redis.Options{
+			Addr:     "localhost:6379",
+			Password: "",
+			DB:       0,
+		})
+
+		dataBinary, errJson := json.Marshal(map[string]interface{}{
+			"userUid":        data.UserUid,
+			"name":           data.Email,
+			"credentialType": data.CredentialType,
+			"isAdmin":        data.IsAdmin,
+		})
+
+		if errJson != nil {
+			log.Fatal(errJson.Error())
+		}
+
+		err := rdb.Set(ctx, refreshToken.String(), dataBinary, 24*time.Hour).Err()
+
+		if err != nil {
+			log.Fatal("Failed to set key : ", err.Error())
+		}
+
+		c.SetCookie("refreshToken", refreshToken.String(), cookieDuration, "/v1/auth/refresh", "localhost", false, true)
 		c.JSON(http.StatusOK, gin.H{
-			"code":    http.StatusOK,
-			"message": "User logged in",
-			"data":    data,
+			"code":      http.StatusOK,
+			"message":   "User logged in",
+			"data":      data,
+			"jwt_token": string(jwtToken),
 		})
 
 	}
 }
-
-// TODO : Validate email and password using regex
