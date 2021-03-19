@@ -138,10 +138,11 @@ func (a *AuthMiddleware) Login() gin.HandlerFunc {
 
 		var claims = map[string]interface{}{
 			"userUid":        data.UserUid,
-			"email":          data.Email,
+			"sub":            data.Email,
 			"credentialType": data.CredentialType,
 			"isAdmin":        data.IsAdmin,
-			"iss":            time.Now().Unix(),
+			"iss":            "Caneta IDP Server",
+			"iat":            time.Now().Unix(),
 			"exp":            time.Now().Add(5 * time.Minute).Unix(),
 		}
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/faizainur/idp-catena/middlewares"
@@ -74,7 +75,7 @@ func setupRouter() *gin.Engine {
 func setupMongoDb(ctx context.Context) (*mongo.Client, error) {
 
 	// Load URI from OS variabel environment
-	dbConfig := utils.DbUtils{ConnectionString: "mongodb+srv://admin:devcatenaAdmin2021@dev-catena.yuofs.mongodb.net/myFirstDatabase?retryWrites=true&w=majority"}
+	dbConfig := utils.DbUtils{ConnectionString: os.Getenv("MONGODB_URI")}
 
 	client, err := dbConfig.Connect(ctx)
 
