@@ -3,8 +3,10 @@ package middlewares
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -66,20 +68,6 @@ func (a *AuthMiddleware) RegisterCredential() gin.HandlerFunc {
 			return
 		}
 
-		/* if isStrongPassword := validator.IsStrongPassword(data.Password); !isStrongPassword {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":  http.StatusBadRequest,
-				"error": "Weak password detected",
-			})
-			return
-		}
-		*/
-
-		/* var message strings.Builder
-
-		message.WriteString("Thank you for registering, ")
-		message.WriteString(data.Email) */
-
 		// Hashing password
 		unsalted := []byte(data.Password)
 		saltedPassword, _ := bcrypt.GenerateFromPassword(unsalted, bcrypt.DefaultCost)
@@ -109,13 +97,11 @@ func (a *AuthMiddleware) Login() gin.HandlerFunc {
 		filter := bson.D{{"email", c.PostForm("email")}}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-
 		defer cancel()
 
 		var data models.Credential
 
 		errMongo := a.collection.FindOne(ctx, filter).Decode(&data)
-
 		if errMongo != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":  http.StatusBadRequest,
@@ -125,7 +111,6 @@ func (a *AuthMiddleware) Login() gin.HandlerFunc {
 		}
 
 		errBcrypt := bcrypt.CompareHashAndPassword([]byte(data.Password), []byte(c.PostForm("password")))
-
 		if errBcrypt != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"code":  http.StatusUnauthorized,
@@ -143,7 +128,7 @@ func (a *AuthMiddleware) Login() gin.HandlerFunc {
 			"isAdmin":        data.IsAdmin,
 			"iss":            "Caneta IDP Server",
 			"iat":            time.Now().Unix(),
-			"exp":            time.Now().Add(5 * time.Minute).Unix(),
+			"exp":            time.Now().Add(10 * time.Minute).Unix(),
 		}
 
 		jwtToken, _ := a.jwtService.GenerateToken(claims)
@@ -151,25 +136,18 @@ func (a *AuthMiddleware) Login() gin.HandlerFunc {
 		// Generate random refersh token
 		refreshToken, _ := uuid.NewV4()
 
-		rdb := redis.NewClient(&redis.Options{
-			Addr:     "localhost:6379",
-			Password: "",
-			DB:       0,
-		})
-
 		dataBinary, errJson := json.Marshal(map[string]interface{}{
-			"userUid":        data.UserUid,
-			"name":           data.Email,
-			"credentialType": data.CredentialType,
-			"isAdmin":        data.IsAdmin,
+			"user_uid":        data.UserUid,
+			"email":           data.Email,
+			"credential_type": data.CredentialType,
+			"is_admin":        data.IsAdmin,
 		})
 
 		if errJson != nil {
 			log.Fatal(errJson.Error())
 		}
 
-		err := rdb.Set(ctx, refreshToken.String(), dataBinary, 24*time.Hour).Err()
-
+		err := a.rdb.Set(ctx, refreshToken.String(), dataBinary, 24*time.Hour).Err()
 		if err != nil {
 			log.Fatal("Failed to set key : ", err.Error())
 		}
@@ -183,4 +161,109 @@ func (a *AuthMiddleware) Login() gin.HandlerFunc {
 		})
 
 	}
+}
+
+func (a *AuthMiddleware) ValidateToken(mode bool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := strings.Trim(c.GetHeader("Authorization"), " ")
+		authToken := strings.Split(authHeader, " ")[1]
+
+		isValid := a.jwtService.ValidateToken([]byte(authToken))
+
+		if !isValid {
+			if !mode {
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"code":     http.StatusUnauthorized,
+					"is_valid": false,
+				})
+				return
+			}
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"code":     http.StatusUnauthorized,
+				"is_valid": false,
+			})
+			return
+		}
+
+		if !mode {
+			c.JSON(http.StatusOK, gin.H{
+				"code":     http.StatusUnauthorized,
+				"is_valid": true,
+			})
+			return
+		}
+		c.Next()
+	}
+}
+
+func (a *AuthMiddleware) RefreshToken(c *gin.Context) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	refreshToken, errCookie := c.Cookie("refreshToken")
+	if errCookie != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":  http.StatusBadRequest,
+			"error": "No cookie found",
+		})
+		return
+	}
+
+	userUid := c.PostForm("user_uid")
+	email := c.PostForm("email")
+
+	val, err := a.rdb.Get(ctx, refreshToken).Result()
+
+	if err == redis.Nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":         http.StatusUnauthorized,
+			"error":        "Please login again",
+			"need_relogin": true,
+		})
+		return
+	} else if err != nil {
+		log.Fatal("err.Error()")
+	}
+
+	fmt.Println(val, userUid, email)
+
+	// data := models.Credential{}
+	var data models.Credential
+	{
+		err := json.Unmarshal([]byte(val), &data)
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+
+		if data.Email != email && data.UserUid != userUid {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"code":         http.StatusUnauthorized,
+				"error":        "Wrong email and user uid",
+				"need_relogin": true,
+				"data":         data,
+			})
+			return
+		}
+
+		var claims = map[string]interface{}{
+			"userUid":        data.UserUid,
+			"sub":            data.Email,
+			"credentialType": data.CredentialType,
+			"isAdmin":        data.IsAdmin,
+			"iss":            "Caneta IDP Server",
+			"iat":            time.Now().Unix(),
+			"exp":            time.Now().Add(5 * time.Minute).Unix(),
+		}
+
+		jwtToken, _ := a.jwtService.GenerateToken(claims)
+
+		c.JSON(http.StatusOK, gin.H{
+			"code":        http.StatusOK,
+			"needRelogin": false,
+			"jwt_token":   string(jwtToken),
+		})
+		return
+	}
+
 }

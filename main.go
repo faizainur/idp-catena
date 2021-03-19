@@ -27,11 +27,9 @@ var (
 func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-
 	defer cancel()
 
 	mongoClient, err := setupMongoDb(ctx)
-
 	if err != nil {
 		log.Fatal(err.Error(), ": Failed to connect to database")
 	}
@@ -48,24 +46,27 @@ func main() {
 func setupRouter() *gin.Engine {
 
 	privKey, err := rsa.GenerateKey(rand.Reader, 2048)
-
 	if err != nil {
 		log.Fatal("Failed to generate private key")
 	}
 
 	jwtService := services.JWTService{PrivateKey: privKey}
-
 	authMiddleware := middlewares.NewAuthMiddleware(collections["credentials"], &jwtService, redisClient)
 
 	router := gin.Default()
-
 	router.Use(cors.Default())
 
 	v1 := router.Group("/v1")
 	{
 		v1.GET("/ping", ping)
+
 		v1.POST("/register", authMiddleware.RegisterCredential())
 		v1.POST("/auth/login", authMiddleware.Login())
+
+		v1.GET("/test", authMiddleware.ValidateToken(true), securedEndpoint)
+
+		v1.GET("/validate_token", authMiddleware.ValidateToken(false))
+		v1.POST("/auth/refresh", authMiddleware.RefreshToken)
 	}
 
 	return router
@@ -76,25 +77,19 @@ func setupMongoDb(ctx context.Context) (*mongo.Client, error) {
 
 	// Load URI from OS variabel environment
 	dbConfig := utils.DbUtils{ConnectionString: os.Getenv("MONGODB_URI")}
-
 	client, err := dbConfig.Connect(ctx)
 
 	if err == nil {
-
 		fmt.Println("Connected to database")
 
 		// Database users
 		dbUsers := client.Database("users")
 		collections["credentials"] = dbUsers.Collection("credentials")
-
 	}
-
 	return client, err
-
 }
 
 func setupRedis() *redis.Client {
-
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
 		Password: "",
@@ -105,6 +100,12 @@ func setupRedis() *redis.Client {
 }
 
 func ping(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"status": "Server is running",
+	})
+}
+
+func securedEndpoint(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "Server is running",
 	})

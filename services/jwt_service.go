@@ -44,12 +44,12 @@ func (j *JWTService) GenerateToken(claims map[string]interface{}) ([]byte, error
 
 func (j *JWTService) ValidateToken(token []byte) bool {
 
-	pubKey := j.PrivateKey.Public()
+	// pubKey :=
 
 	_, err := jwt.Parse(
 		token,
 		jwt.WithValidate(true),
-		jwt.WithVerify(jwa.RS256, &pubKey),
+		jwt.WithVerify(jwa.RS256, &j.PrivateKey.PublicKey),
 	)
 
 	if err != nil {
