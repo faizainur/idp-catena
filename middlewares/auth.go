@@ -311,6 +311,7 @@ func (a *AuthMiddleware) UpdatePassword(c *gin.Context) {
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			c.String(http.StatusBadRequest, "%s", "Bad request")
+			return
 		}
 		log.Fatal(err.Error())
 	}
