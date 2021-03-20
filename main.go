@@ -13,11 +13,12 @@ import (
 	"github.com/faizainur/idp-catena/middlewares"
 	"github.com/faizainur/idp-catena/services"
 	"github.com/faizainur/idp-catena/utils"
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 	"go.mongodb.org/mongo-driver/mongo"
 )
+
+// TODO: Check if email already Exist
 
 var (
 	collections = make(map[string]*mongo.Collection)
@@ -54,19 +55,26 @@ func setupRouter() *gin.Engine {
 	authMiddleware := middlewares.NewAuthMiddleware(collections["credentials"], &jwtService, redisClient)
 
 	router := gin.Default()
-	router.Use(cors.Default())
+	router.Use(CORSMiddleware())
+	router.LoadHTMLGlob("templates/*")
 
 	v1 := router.Group("/v1")
 	{
 		v1.GET("/ping", ping)
-
-		v1.POST("/register", authMiddleware.RegisterCredential())
-		v1.POST("/auth/login", authMiddleware.Login())
-
 		v1.GET("/test", authMiddleware.ValidateToken(true), securedEndpoint)
+		v1.POST("/reset", authMiddleware.RequestResetPassword)
 
-		v1.GET("/validate_token", authMiddleware.ValidateToken(false))
-		v1.POST("/auth/refresh", authMiddleware.RefreshToken)
+		auth := v1.Group("/auth")
+		{
+			auth.POST("/register", authMiddleware.RegisterCredential)
+			auth.POST("/login", authMiddleware.Login)
+			auth.POST("/validate_token", authMiddleware.ValidateToken(false))
+			auth.POST("/refresh_token", authMiddleware.RefreshToken)
+			auth.POST("/update_password", authMiddleware.ValidateToken(true), authMiddleware.UpdatePassword)
+			auth.POST("/request_reset", authMiddleware.RequestResetPassword)
+			auth.GET("/reset_password", authMiddleware.GetResetPassword)
+			auth.POST("/reset_password", authMiddleware.SetResetPassword)
+		}
 	}
 
 	return router
@@ -109,4 +117,20 @@ func securedEndpoint(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "Server is running",
 	})
+}
+
+func CORSMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "localhost:4000")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, PUT")
+
+		// if c.Request.Method == "OPTIONS" {
+		// 	c.AbortWithStatus(204)
+		// 	return
+		// }
+
+		c.Next()
+	}
 }

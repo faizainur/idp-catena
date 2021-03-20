@@ -1,7 +1,10 @@
 package services
 
 import (
+	"context"
 	"crypto/rsa"
+	"log"
+	"time"
 
 	"github.com/lestrrat-go/jwx/jwa"
 	"github.com/lestrrat-go/jwx/jwt"
@@ -42,20 +45,26 @@ func (j *JWTService) GenerateToken(claims map[string]interface{}) ([]byte, error
 
 }
 
-func (j *JWTService) ValidateToken(token []byte) bool {
+func (j *JWTService) ValidateToken(token []byte) (bool, map[string]interface{}) {
 
-	// pubKey :=
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	_, err := jwt.Parse(
+	payload, err := jwt.Parse(
 		token,
 		jwt.WithValidate(true),
 		jwt.WithVerify(jwa.RS256, &j.PrivateKey.PublicKey),
 	)
 
 	if err != nil {
-		return false
+		return false, nil
 	}
 
-	return true
+	payloadMap, err := payload.AsMap(ctx)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+
+	return true, payloadMap
 
 }
