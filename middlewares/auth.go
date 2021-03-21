@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -142,7 +143,7 @@ func (a *AuthMiddleware) Login(c *gin.Context) {
 
 	dataBinary, errJson := json.Marshal(map[string]interface{}{
 		"user_uid":        data.UserUid,
-		"refresh_token":   refreshToken.String(),
+		"email":           data.Email,
 		"credential_type": data.CredentialType,
 		"is_admin":        data.IsAdmin,
 	})
@@ -151,12 +152,13 @@ func (a *AuthMiddleware) Login(c *gin.Context) {
 		log.Fatal(errJson.Error())
 	}
 
-	err := a.rdb.Set(ctx, data.Email, dataBinary, 24*time.Hour).Err()
+	err := a.rdb.Set(ctx, refreshToken.String(), dataBinary, 24*time.Hour).Err()
 	if err != nil {
 		log.Fatal("Failed to set key : ", err.Error())
 	}
 
-	c.SetCookie("refreshToken", refreshToken.String(), cookieDuration, "/v1/auth/refresh", "localhost", false, true)
+	c.SetCookie("refreshToken", refreshToken.String(), cookieDuration, "/v1/auth/refresh_token", "localhost", false, true)
+	c.SetCookie("refreshToken", refreshToken.String(), cookieDuration, "/v1/auth/logout", "localhost", false, true)
 	c.JSON(http.StatusOK, gin.H{
 		"code":      http.StatusOK,
 		"message":   "User logged in",
@@ -170,9 +172,19 @@ func (a *AuthMiddleware) Logout(c *gin.Context) {
 	authHeader := strings.Trim(c.GetHeader("Authorization"), " ")
 	authToken := strings.Split(authHeader, " ")[1]
 
-	email := c.GetString("email")
+	refreshToken, errCookie := c.Cookie("refreshToken")
+	if errCookie != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":  http.StatusBadRequest,
+			"error": "No cookie found",
+		})
+		return
+	}
 
-	status, err := a.invalidateToken(authToken, email)
+	email := c.GetString("email")
+	fmt.Println(email)
+
+	status, err := a.invalidateToken(authToken, refreshToken, email)
 	if !status {
 		log.Fatal("Failed to set key : ", err.Error())
 	}
@@ -207,29 +219,35 @@ func (a *AuthMiddleware) ValidateToken(mode bool) gin.HandlerFunc {
 				c.JSON(http.StatusUnauthorized, gin.H{
 					"code":     http.StatusUnauthorized,
 					"is_valid": false,
+					"halo":     "halo",
 				})
 				return
 			}
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"code":     http.StatusUnauthorized,
+				"halo":     "halo",
 				"is_valid": false,
 			})
 			return
 		}
+
+		userUid := payload["userUid"]
+		email := payload["sub"]
 
 		if !mode {
 			c.JSON(http.StatusOK, gin.H{
 				"code":     http.StatusOK,
 				"is_valid": true,
 				"data": map[string]interface{}{
-					"user_uid": payload["userUid"],
-					"email":    payload["email"],
+					"user_uid": userUid,
+					"email":    email,
 				},
 			})
 			return
 		}
-		c.Set("userUid", payload["userUid"])
-		c.Set("email", payload["email"])
+
+		c.Set("userUid", userUid)
+		c.Set("email", email)
 		c.Next()
 	}
 }
@@ -244,21 +262,26 @@ func (a *AuthMiddleware) isInvalidatedToken(token string) bool {
 
 	if err != redis.Nil {
 		return true
-	} else if err != nil {
+	} else if err != nil && err != redis.Nil {
 		log.Fatal(err.Error())
 	}
 	return false
 }
 
-func (a *AuthMiddleware) invalidateToken(token string, email string) (bool, error) {
+func (a *AuthMiddleware) invalidateToken(jwt string, refreshToken string, email string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	hash := a.hashToken(token)
+	hash := a.hashToken(jwt)
 
 	err := a.rdb.Set(ctx, hash, email, 5*time.Minute).Err()
 	if err != nil {
 		return false, err
+	}
+
+	berr := a.rdb.Del(ctx, refreshToken).Err()
+	if berr != nil {
+		return false, berr
 	}
 	return true, nil
 }
@@ -290,7 +313,7 @@ func (a *AuthMiddleware) RefreshToken(c *gin.Context) {
 	userUid := c.PostForm("user_uid")
 	email := c.PostForm("email")
 
-	val, err := a.rdb.Get(ctx, email).Result()
+	val, err := a.rdb.Get(ctx, refreshToken).Result()
 
 	if err == redis.Nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -325,7 +348,7 @@ func (a *AuthMiddleware) RefreshToken(c *gin.Context) {
 
 		var claims = map[string]interface{}{
 			"userUid":        data.UserUid,
-			"sub":            data.Email,
+			"sub":            email,
 			"credentialType": data.CredentialType,
 			"isAdmin":        data.IsAdmin,
 			"iss":            "Caneta IDP Server",

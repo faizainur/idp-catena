@@ -68,6 +68,7 @@ func setupRouter() *gin.Engine {
 		{
 			auth.POST("/register", authMiddleware.RegisterCredential)
 			auth.POST("/login", authMiddleware.Login)
+			auth.POST("/logout", authMiddleware.ValidateToken(true), authMiddleware.Logout)
 			auth.POST("/validate_token", authMiddleware.ValidateToken(false))
 			auth.POST("/refresh_token", authMiddleware.RefreshToken)
 			auth.POST("/update_password", authMiddleware.ValidateToken(true), authMiddleware.UpdatePassword)
@@ -115,7 +116,9 @@ func ping(c *gin.Context) {
 
 func securedEndpoint(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"status": "Server is running",
+		"status":   "Server is running",
+		"email":    c.GetString("email"),
+		"user_uid": c.GetString("userUid"),
 	})
 }
 

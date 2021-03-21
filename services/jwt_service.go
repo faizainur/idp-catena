@@ -57,6 +57,7 @@ func (j *JWTService) ValidateToken(token []byte) (bool, map[string]interface{}) 
 	)
 
 	if err != nil {
+		log.Fatal(err.Error())
 		return false, nil
 	}
 
@@ -64,7 +65,7 @@ func (j *JWTService) ValidateToken(token []byte) (bool, map[string]interface{}) 
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-
+	// fmt.Println(payloadMap["userUid"])
 	return true, payloadMap
 
 }
