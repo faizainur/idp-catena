@@ -62,7 +62,7 @@ func setupRouter() *gin.Engine {
 	{
 		v1.GET("/ping", ping)
 		v1.GET("/test", authMiddleware.ValidateToken(true), securedEndpoint)
-		v1.POST("/reset", authMiddleware.RequestResetPassword)
+		v1.GET("/red", testRedirect)
 
 		auth := v1.Group("/auth")
 		{
@@ -120,6 +120,10 @@ func securedEndpoint(c *gin.Context) {
 		"email":    c.GetString("email"),
 		"user_uid": c.GetString("userUid"),
 	})
+}
+
+func testRedirect(c *gin.Context) {
+	c.Redirect(http.StatusTemporaryRedirect, "https://www.google.com")
 }
 
 func CORSMiddleware() gin.HandlerFunc {
