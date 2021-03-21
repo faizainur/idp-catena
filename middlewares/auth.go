@@ -2,6 +2,8 @@ package middlewares
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/base64"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -140,7 +142,7 @@ func (a *AuthMiddleware) Login(c *gin.Context) {
 
 	dataBinary, errJson := json.Marshal(map[string]interface{}{
 		"user_uid":        data.UserUid,
-		"email":           data.Email,
+		"refresh_token":   refreshToken.String(),
 		"credential_type": data.CredentialType,
 		"is_admin":        data.IsAdmin,
 	})
@@ -149,7 +151,7 @@ func (a *AuthMiddleware) Login(c *gin.Context) {
 		log.Fatal(errJson.Error())
 	}
 
-	err := a.rdb.Set(ctx, refreshToken.String(), dataBinary, 24*time.Hour).Err()
+	err := a.rdb.Set(ctx, data.Email, dataBinary, 24*time.Hour).Err()
 	if err != nil {
 		log.Fatal("Failed to set key : ", err.Error())
 	}
@@ -163,10 +165,40 @@ func (a *AuthMiddleware) Login(c *gin.Context) {
 	})
 }
 
+func (a *AuthMiddleware) Logout(c *gin.Context) {
+
+	authHeader := strings.Trim(c.GetHeader("Authorization"), " ")
+	authToken := strings.Split(authHeader, " ")[1]
+
+	email := c.GetString("email")
+
+	status, err := a.invalidateToken(authToken, email)
+	if !status {
+		log.Fatal("Failed to set key : ", err.Error())
+	}
+	c.String(http.StatusOK, "%s", "Logged out")
+}
+
 func (a *AuthMiddleware) ValidateToken(mode bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := strings.Trim(c.GetHeader("Authorization"), " ")
 		authToken := strings.Split(authHeader, " ")[1]
+
+		isInvalidated := a.isInvalidatedToken(authToken)
+		if isInvalidated {
+			if !mode {
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"code":     http.StatusUnauthorized,
+					"is_valid": false,
+				})
+				return
+			}
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"code":     http.StatusUnauthorized,
+				"is_valid": false,
+			})
+			return
+		}
 
 		isValid, payload := a.jwtService.ValidateToken([]byte(authToken))
 
@@ -202,6 +234,45 @@ func (a *AuthMiddleware) ValidateToken(mode bool) gin.HandlerFunc {
 	}
 }
 
+func (a *AuthMiddleware) isInvalidatedToken(token string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	hash := a.hashToken(token)
+
+	_, err := a.rdb.Get(ctx, hash).Result()
+
+	if err != redis.Nil {
+		return true
+	} else if err != nil {
+		log.Fatal(err.Error())
+	}
+	return false
+}
+
+func (a *AuthMiddleware) invalidateToken(token string, email string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	hash := a.hashToken(token)
+
+	err := a.rdb.Set(ctx, hash, email, 5*time.Minute).Err()
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (a *AuthMiddleware) hashToken(token string) string {
+	hashGen := sha1.New()
+
+	hashGen.Write([]byte(token))
+	hash := hashGen.Sum(nil)
+	encodedBase64Hash := base64.StdEncoding.EncodeToString(hash)
+
+	return encodedBase64Hash
+}
+
 func (a *AuthMiddleware) RefreshToken(c *gin.Context) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -219,7 +290,7 @@ func (a *AuthMiddleware) RefreshToken(c *gin.Context) {
 	userUid := c.PostForm("user_uid")
 	email := c.PostForm("email")
 
-	val, err := a.rdb.Get(ctx, refreshToken).Result()
+	val, err := a.rdb.Get(ctx, email).Result()
 
 	if err == redis.Nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -229,7 +300,7 @@ func (a *AuthMiddleware) RefreshToken(c *gin.Context) {
 		})
 		return
 	} else if err != nil {
-		log.Fatal("err.Error()")
+		log.Fatal(err.Error())
 	}
 
 	// fmt.Println(val, userUid, email)
@@ -242,7 +313,7 @@ func (a *AuthMiddleware) RefreshToken(c *gin.Context) {
 			log.Fatal(err.Error())
 		}
 
-		if data.Email != email && data.UserUid != userUid {
+		if data.RefreshToken != refreshToken && data.UserUid != userUid {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"code":         http.StatusUnauthorized,
 				"error":        "Wrong email and user uid",
@@ -375,7 +446,7 @@ func (a *AuthMiddleware) GetResetPassword(c *gin.Context) {
 		c.String(http.StatusBadRequest, "%s", "Bad Request")
 		return
 	} else if err != nil {
-		log.Fatal("err.Error()")
+		log.Fatal(err.Error())
 	}
 
 	if val != token {
