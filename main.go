@@ -41,7 +41,7 @@ func main() {
 	r := setupRouter()
 
 	//Start server
-	r.Run(":4000")
+	r.Run(":8000")
 }
 
 func setupRouter() *gin.Engine {
@@ -62,7 +62,8 @@ func setupRouter() *gin.Engine {
 	{
 		v1.GET("/ping", ping)
 		v1.GET("/test", authMiddleware.ValidateToken(true), securedEndpoint)
-		v1.GET("/red", testRedirect)
+		v1.GET("/redis", testRedirect)
+		// v1.POST("/testconsent", testOauthConsent)
 
 		auth := v1.Group("/auth")
 		{
@@ -75,6 +76,14 @@ func setupRouter() *gin.Engine {
 			auth.POST("/request_reset", authMiddleware.RequestResetPassword)
 			auth.GET("/reset_password", authMiddleware.GetResetPassword)
 			auth.POST("/reset_password", authMiddleware.SetResetPassword)
+		}
+
+		oauth := v1.Group("/oauth2/")
+		{
+			oauth.GET("/login", authMiddleware.RequestOauthLogin)
+			oauth.POST("/login", authMiddleware.OauthLogin)
+			oauth.GET("/authorize", authMiddleware.RequestOauthConsent)
+			oauth.POST("/authorize", authMiddleware.OauthConsent)
 		}
 	}
 
@@ -123,12 +132,21 @@ func securedEndpoint(c *gin.Context) {
 }
 
 func testRedirect(c *gin.Context) {
-	c.Redirect(http.StatusTemporaryRedirect, "https://www.google.com")
+	c.JSON(200, gin.H{
+		"url_redirect": "https://www.microsoft.com",
+	})
 }
+
+// func testOauthConsent(c *gin.Context) {
+// 	var body map[string]interface{}
+// 	c.ShouldBindJSON(&body)
+// 	array := body["array"]
+// 	c.String(http.StatusOK, "%s", array[0])
+// }
 
 func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "localhost:4000")
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, PUT")

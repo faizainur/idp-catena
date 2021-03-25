@@ -8,36 +8,53 @@ window.addEventListener("load", function () {
         var checkEmailPaswrodDiv = document.getElementById("checkEmailPassword")
         var checkEmailPasswordStatus = false
 
+        const params = new URLSearchParams(location.search)
+
+        const URL = {{.url}}
+
         if (checkEmailPasswordStatus) {
             checkEmailPaswrodDiv.classList.remove("is-hidden")
         }
 
-        function sendData() {
-          const XHR = new XMLHttpRequest();
+        // function sendData(formData) {
+        //   const XHR = new XMLHttpRequest();
 
          
 
-          XHR.addEventListener("load", function (event) {
-            alert(event.target.responseText);
-            event.target.res
-          });
+        //   XHR.addEventListener("load", function (event) {
+        //     alert(event.target.responseText);
+        //     event.target.res
+        //   });
 
-          // Define what happens in case of error
-          XHR.addEventListener("error", function (event) {
-            alert("Oops! Something went wrong.");
-          });
+        //   // Define what happens in case of error
+        //   XHR.addEventListener("error", function (event) {
+        //     alert("Oops! Something went wrong.");
+        //   });
 
-        //   XHR.open("POST", {{.url}});
-          XHR.send(FD);
+        // //   XHR.open("POST", {{.url}});
+        //   XHR.send(formData);
 
-          //   console.log(FD);
+        //   //   console.log(FD);
+        // }
+
+        async function postData(url, data) {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-type': 'application/x-www-form-urlencoded'
+                },
+                redirect: "follow",
+                body: data
+            });
+            return response
         }
 
         form.addEventListener("submit", function (event) {
             event.preventDefault();
 
              const FD = new FormData(form);
-            //  console.log(FD.get("email"))
+             console.log(FD.get("email"))
+             console.log(params.get("query"))
 
             if (FD.get("email") === "") {
                 emailInput.classList.add("is-danger")
@@ -47,12 +64,18 @@ window.addEventListener("load", function () {
                 passwordHelper.classList.remove("is-hidden")
             }
 
-            // if (passwordField1 !== passwordField2) {
-            //     alert("Password not the same")
-            //     return
-            // } else {
-            //     sendData()
-            // }
+            fetch(URL, {
+                method:'POST',
+                headers: {
+                    'Content-type': 'application/x-www-form-urlencoded'
+                },
+                redirect: 'follow',
+                body: 'data'
+            }).then(function(response) {
+                if (response.redirected) {
+                    window.location.href = response.url
+                }
+            })
         });
 
         passwordInput.addEventListener('input', function(event) {

@@ -1,0 +1,189 @@
+<html>
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bulma@0.9.1/css/bulma.min.css"
+    />
+
+    <title>Login</title>
+  </head>
+  <body>
+    <!-- <h1>Hello, Bulma</h1>
+    <a href="">Some link</a> -->
+    <div class="block"></div>
+    <div class="block"></div>
+    <section class="section">
+      <div class="container">
+        <div class="columns is-vcentered is-centered">
+          <div class="column is-4">
+            <p
+              class="is-size-4 mt-6 mb-5 pb-4 has-text-centered has-text-weight-light"
+            >
+              Sign in to <span class="has-text-weight-medium">Catena</span>
+            </p>
+            <div id="checkEmailPassword" class="is-hidden">
+              <div class="notification p-3 mx-5 mb-3 is-danger is-light">
+                <p style="font-size: smaller">Check your email and password</p>
+              </div>
+            </div>
+            <div class="notification px-5 mx-5 pt-5">
+              <form id="oauthLogin">
+                <label class="label has-text-weight-light">Email address</label>
+                <div class="field">
+                  <div class="control my-2">
+                    <input
+                      class="input"
+                      type="email"
+                      name="email"
+                      id="emailInput"
+                    />
+                    <p
+                      class="help is-danger is-hidden"
+                      id="emailFieldRequiredHelper"
+                    >
+                      This field is required
+                    </p>
+                  </div>
+                </div>
+                <label class="label has-text-weight-light">Password</label>
+                <div class="field">
+                  <div class="control">
+                    <input
+                      class="input"
+                      type="password"
+                      name="password"
+                      id="passwordInput"
+                    />
+                    <p
+                      class="help is-danger is-hidden"
+                      id="passwordFieldRequiredHelper"
+                    >
+                      This field is required
+                    </p>
+                  </div>
+                </div>
+                <p class="has-text-right">
+                  <a
+                    href=""
+                    class="is-size-7"
+                    style="
+                      color: #3273dc;
+                      cursor: pointer;
+                      text-decoration: none;
+                    "
+                    >Forgot password?</a
+                  >
+                </p>
+                <div class="field mt-4 pt-3 mb-3">
+                  <div class="control">
+                    <input
+                      type="submit"
+                      class="button is-link is-fullwidth"
+                      value="Sign in"
+                    />
+                  </div>
+                </div>
+              </form>
+            </div>
+            <div class="notification is-white pt-0 px-5" style="border: 2px">
+              <a
+                class="button is-fullwidth is-medium"
+                href=""
+                style="color: #3273dc; cursor: pointer; text-decoration: none"
+                ><span class="is-size-6">Create an account</span></a
+              >
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <script>
+      var progressBar = document.getElementById("progressBar");
+
+      window.addEventListener("load", function () {
+        const form = document.getElementById("oauthLogin");
+        var passwordInput = document.getElementById("passwordInput");
+        var emailInput = document.getElementById("emailInput");
+        var passwordHelper = document.getElementById(
+          "passwordFieldRequiredHelper"
+        );
+        var emailHelper = document.getElementById("emailFieldRequiredHelper");
+
+        var checkEmailPaswrodDiv = document.getElementById(
+          "checkEmailPassword"
+        );
+        var checkEmailPasswordStatus = {{.checkEmailPassword}}
+
+        const params = new URLSearchParams(location.search)
+
+        const URL = {{.url}}
+
+        if (checkEmailPasswordStatus) {
+          checkEmailPaswrodDiv.classList.remove("is-hidden");
+        }
+
+        form.addEventListener("submit", function (event) {
+          event.preventDefault();
+
+          const formData = new FormData(form);
+          formData.append("login_challenge", params.get("login_challenge"))
+
+          if (formData.get("email") === "") {
+            emailInput.classList.add("is-danger");
+            emailHelper.classList.remove("is-hidden");
+            return;
+          } else if (formData.get("password") === "") {
+            passwordInput.classList.add("is-danger");
+            passwordHelper.classList.remove("is-hidden");
+            return;
+          }
+
+
+          fetch(URL, {
+            method: "POST",
+            body: formData,
+            cors: "no-cors",
+          })
+            .then(function (response) {
+              return response.json();
+            })
+            .then(function (data) {
+              if (data["error"] === "login failed") {
+                console.log(data);
+                checkEmailPaswrodDiv.classList.remove("is-hidden");
+              } else {
+                console.log(data);
+                window.location = data["url_redirect"]
+              }
+            })
+            .catch(function (err) {
+              console.log("Something went wrong!", err);
+            });
+        });
+
+        passwordInput.addEventListener("input", function (event) {
+          if (event.target.value === "") {
+            passwordInput.classList.add("is-danger");
+            passwordHelper.classList.remove("is-hidden");
+          } else {
+            passwordInput.classList.remove("is-danger");
+            passwordHelper.classList.add("is-hidden");
+          }
+        });
+
+        emailInput.addEventListener("input", function (event) {
+          if (event.target.value === "") {
+            emailInput.classList.add("is-danger");
+            emailHelper.classList.remove("is-hidden");
+          } else {
+            emailInput.classList.remove("is-danger");
+            emailHelper.classList.add("is-hidden");
+          }
+        });
+      });
+    </script>
+  </body>
+</html>
