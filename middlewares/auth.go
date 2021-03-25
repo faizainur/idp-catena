@@ -66,7 +66,7 @@ func NewAuthMiddleware(c *mongo.Collection, j *services.JWTService, r *redis.Cli
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
-		Timeout: 0,
+		Timeout: 10 * time.Second,
 	}
 	transport := httptransport.NewWithClient("localhost:9001", "/", []string{"https"}, skipTlsClient)
 	hydra := client.New(transport, nil)
