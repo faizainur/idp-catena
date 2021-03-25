@@ -206,16 +206,6 @@ func (a *AuthMiddleware) Login(c *gin.Context) {
 	})
 }
 
-// func GetLoginRequest(loginChallenge string)  {
-// 	var link strings.Builder
-// 	link.WriteString("http://localhost:9001/oauth2/auth/requests/login?login_challenge=")
-// 	link.WriteString(loginChallenge)
-
-// 	headers := map[string][]string{
-//         "Accept": []string{"application/json"},
-//     }
-// }
-
 func (a *AuthMiddleware) RequestOauthLogin(c *gin.Context) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -418,20 +408,24 @@ func (a *AuthMiddleware) OauthConsent(c *gin.Context) {
 
 	if !isGranted {
 		consentRejectParams := admin.NewRejectConsentRequestParams()
-		consentRejectParams.SetContext(ctx)
+		consentRejectParams.WithContext(ctx)
 		consentRejectParams.SetConsentChallenge(consentChallange)
+		consentRejectParams.SetBody(&hydraModels.RejectRequest{
+			Error:            "access_denied",
+			ErrorDescription: "The resource owner denied the request",
+		})
 
-		consentRejectResponse, _ := a.hydraAdmin.RejectConsentRequest(consentRejectParams)
-		if err != nil {
-			str := fmt.Sprint("error RejectConsentRequest", err.Error())
+		consentRejectResponse, errRejectConsent := a.hydraAdmin.RejectConsentRequest(consentRejectParams)
+		if errRejectConsent != nil {
+			str := fmt.Sprint("error RejectConsentRequest", errRejectConsent.Error())
 			c.String(http.StatusUnprocessableEntity, str)
+			fmt.Println(errRejectConsent.Error())
+			return
 		}
-		// c.JSON(http.StatusOK, gin.H{
-		// 	"url_redirect": "https://www.microsoft.com",
-		// })
 		c.JSON(http.StatusOK, gin.H{
 			"url_redirect": consentRejectResponse.GetPayload().RedirectTo,
 		})
+		fmt.Println("Not allowed")
 		return
 	}
 
@@ -453,20 +447,6 @@ func (a *AuthMiddleware) OauthConsent(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"url_redirect": consentAcceptResponse.GetPayload().RedirectTo,
 	})
-
-	// c.JSON(http.StatusOK, gin.H{
-	// 	"url_redirect": "https://www.google.com",
-	// })
-
-	// if !isGranted {
-	// 	c.JSON(http.StatusOK, gin.H{
-	// 		"url_redirect": "https://www.microsoft.com",
-	// 	})
-	// 	return
-	// }
-	// c.JSON(http.StatusOK, gin.H{
-	// 	"url_redirect": "https://www.google.com",
-	// })
 }
 
 func (a *AuthMiddleware) ValidateToken(mode bool) gin.HandlerFunc {
