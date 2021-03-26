@@ -6,7 +6,6 @@ import (
 	"crypto/rsa"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"time"
 
@@ -65,8 +64,6 @@ func setupRouter() *gin.Engine {
 	{
 		v1.GET("/ping", ping)
 		v1.GET("/test", authMiddleware.ValidateToken(true), securedEndpoint)
-		v1.GET("/redis", testRedirect)
-		// v1.POST("/testconsent", testOauthConsent)
 
 		auth := v1.Group("/auth")
 		{
@@ -81,12 +78,13 @@ func setupRouter() *gin.Engine {
 			auth.POST("/reset_password", authMiddleware.SetResetPassword)
 		}
 
-		oauth := v1.Group("/oauth2/")
+		oauth2 := v1.Group("/oauth2/")
 		{
-			oauth.GET("/login", oauth2Middleware.RequestOauthLogin)
-			oauth.POST("/login", oauth2Middleware.OauthLogin)
-			oauth.GET("/authorize", oauth2Middleware.RequestOauthConsent)
-			oauth.POST("/authorize", oauth2Middleware.OauthConsent)
+			oauth2.GET("/login", oauth2Middleware.RequestOauthLogin)
+			oauth2.POST("/login", oauth2Middleware.OauthLogin)
+			oauth2.GET("/authorize", oauth2Middleware.RequestOauthConsent)
+			oauth2.POST("/authorize", oauth2Middleware.OauthConsent)
+			oauth2.POST("/client/create", oauth2Middleware.CreateOauthClient)
 		}
 	}
 
@@ -123,33 +121,6 @@ func setupRedis() *redis.Client {
 
 	return rdb
 }
-
-func ping(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"status": "Server is running",
-	})
-}
-
-func securedEndpoint(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"status":   "Server is running",
-		"email":    c.GetString("email"),
-		"user_uid": c.GetString("userUid"),
-	})
-}
-
-func testRedirect(c *gin.Context) {
-	c.JSON(200, gin.H{
-		"url_redirect": "https://www.microsoft.com",
-	})
-}
-
-// func testOauthConsent(c *gin.Context) {
-// 	var body map[string]interface{}
-// 	c.ShouldBindJSON(&body)
-// 	array := body["array"]
-// 	c.String(http.StatusOK, "%s", array[0])
-// }
 
 func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {

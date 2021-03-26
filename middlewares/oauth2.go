@@ -13,6 +13,7 @@ import (
 	"github.com/faizainur/idp-catena/services"
 	"github.com/gin-gonic/gin"
 	httptransport "github.com/go-openapi/runtime/client"
+	"github.com/gofrs/uuid"
 	"github.com/ory/hydra-client-go/client"
 	"github.com/ory/hydra-client-go/client/admin"
 	hydraModels "github.com/ory/hydra-client-go/models"
@@ -272,4 +273,42 @@ func (o *oauth2Middleware) OauthConsent(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"url_redirect": consentAcceptResponse.GetPayload().RedirectTo,
 	})
+}
+
+func (o *oauth2Middleware) CreateOauthClient(c *gin.Context) {
+
+	uuidGemerator, errUuid := uuid.NewGen().NewV4()
+	if errUuid != nil {
+		log.Fatal(errUuid.Error())
+	}
+
+	createOauthClientParams := admin.NewCreateOAuth2ClientParams()
+	createOauthClientParams.WithBody(&hydraModels.OAuth2Client{
+		ClientName: c.PostForm("client_name"),
+		ClientID:   uuidGemerator.String(),
+	})
+
+	result, err := o.hydraAdmin.CreateOAuth2Client(createOauthClientParams)
+	if err != nil {
+		switch e := err.(type) {
+		case (*admin.CreateOAuth2ClientConflict):
+			c.JSON(http.StatusConflict, gin.H{
+				"code":  http.StatusConflict,
+				"error": e.GetPayload(),
+			})
+		case (*admin.CreateOAuth2ClientBadRequest):
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":  http.StatusBadRequest,
+				"error": e.GetPayload(),
+			})
+		case (*admin.CreateOAuth2ClientInternalServerError):
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":  http.StatusInternalServerError,
+				"error": e.GetPayload(),
+			})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, result.GetPayload())
 }

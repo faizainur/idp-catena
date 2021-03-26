@@ -325,7 +325,6 @@ func (a *authMiddleware) RefreshToken(c *gin.Context) {
 		})
 		return
 	}
-
 }
 
 func (a *authMiddleware) RequestResetPassword(c *gin.Context) {
@@ -443,7 +442,6 @@ func (a *authMiddleware) SetResetPassword(c *gin.Context) {
 		"code":    http.StatusOK,
 		"message": "Password updated",
 	})
-
 }
 
 func (a *authMiddleware) UpdatePassword(c *gin.Context) {
