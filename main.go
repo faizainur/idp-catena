@@ -52,7 +52,10 @@ func setupRouter() *gin.Engine {
 	}
 
 	jwtService := services.JWTService{PrivateKey: privKey}
-	authMiddleware := middlewares.NewAuthMiddleware(collections["credentials"], &jwtService, redisClient)
+	userManagementService := services.UserManagement{collections["credentials"]}
+
+	authMiddleware := middlewares.NewAuthMiddleware(&jwtService, &userManagementService, redisClient)
+	oauth2Middleware := middlewares.NewOauth2Middleware(&userManagementService)
 
 	router := gin.Default()
 	router.Use(CORSMiddleware())
@@ -80,10 +83,10 @@ func setupRouter() *gin.Engine {
 
 		oauth := v1.Group("/oauth2/")
 		{
-			oauth.GET("/login", authMiddleware.RequestOauthLogin)
-			oauth.POST("/login", authMiddleware.OauthLogin)
-			oauth.GET("/authorize", authMiddleware.RequestOauthConsent)
-			oauth.POST("/authorize", authMiddleware.OauthConsent)
+			oauth.GET("/login", oauth2Middleware.RequestOauthLogin)
+			oauth.POST("/login", oauth2Middleware.OauthLogin)
+			oauth.GET("/authorize", oauth2Middleware.RequestOauthConsent)
+			oauth.POST("/authorize", oauth2Middleware.OauthConsent)
 		}
 	}
 
@@ -98,11 +101,15 @@ func setupMongoDb(ctx context.Context) (*mongo.Client, error) {
 	client, err := dbConfig.Connect(ctx)
 
 	if err == nil {
-		fmt.Println("Connected to database")
+		fmt.Println("Connected to Mongo URI")
 
-		// Database users
+		// Connect Database
 		dbUsers := client.Database("users")
+		dbOauth2 := client.Database("oauth2")
+
+		// Get Collections
 		collections["credentials"] = dbUsers.Collection("credentials")
+		collections["oauth2_client_apps"] = dbOauth2.Collection("client_apps")
 	}
 	return client, err
 }

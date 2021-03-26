@@ -151,7 +151,7 @@
               return response.json();
             })
             .then(function (data) {
-              if (data["error"] === "login failed") {
+              if (data["status"] === "login failed") {
                 console.log(data);
                 checkEmailPaswrodDiv.classList.remove("is-hidden");
               } else {

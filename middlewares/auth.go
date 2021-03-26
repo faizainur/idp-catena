@@ -3,164 +3,70 @@ package middlewares
 import (
 	"context"
 	"crypto/sha1"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
-
 	"github.com/faizainur/idp-catena/models"
 	"github.com/faizainur/idp-catena/services"
-	"github.com/faizainur/idp-catena/validator"
 	"github.com/gin-gonic/gin"
-	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofrs/uuid"
-	"github.com/ory/hydra-client-go/client"
-	"github.com/ory/hydra-client-go/client/admin"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-
-	hydraModels "github.com/ory/hydra-client-go/models"
 )
 
 const (
-	BasicUser string = "basic"
-	BankUser  string = "bank"
-
 	cookieDuration int = 86400
 )
 
-type AuthMiddleware struct {
-	collection *mongo.Collection
+type authMiddleware struct {
 	jwtService *services.JWTService
 	rdb        *redis.Client
-	hydraAdmin admin.ClientService
-	// hydraPublic *client.OryHydra
+
+	userManagementService *services.UserManagement
 }
 
-func NewAuthMiddleware(c *mongo.Collection, j *services.JWTService, r *redis.Client) *AuthMiddleware {
+func NewAuthMiddleware(j *services.JWTService, u *services.UserManagement, r *redis.Client) *authMiddleware {
 
-	// adminUrl, _ := url.Parse("http://localhost:9001")
-	// hydraAdmin := client.NewHTTPClientWithConfig(nil, &client.TransportConfig{
-	// 	Schemes:  []string{adminUrl.Scheme},
-	// 	Host:     adminUrl.Host,
-	// 	BasePath: adminUrl.Path,
-	// })
-
-	// publicUrl, _ := url.Parse("http://localhost:9000/")
-	// hydraPublic := client.NewHTTPClientWithConfig(nil, &client.TransportConfig{
-	// 	Schemes:  []string{publicUrl.Scheme},
-	// 	Host:     publicUrl.Host,
-	// 	BasePath: publicUrl.Path,
-	// })
-
-	skipTlsClient := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-		Timeout: 10 * time.Second,
-	}
-	transport := httptransport.NewWithClient("localhost:9001", "/", []string{"https"}, skipTlsClient)
-	hydra := client.New(transport, nil)
-
-	return &AuthMiddleware{
-		collection: c,
-		jwtService: j,
-		rdb:        r,
-		hydraAdmin: hydra.Admin,
+	return &authMiddleware{
+		jwtService:            j,
+		userManagementService: u,
+		rdb:                   r,
 		// hydraPublic: hydraPublic,
 	}
 }
 
-func (a *AuthMiddleware) RegisterCredential(c *gin.Context) {
+func (a *authMiddleware) RegisterCredential(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	var data models.Credential
-
-	email := c.PostForm("email")
-	password := c.PostForm("password")
-
-	// Validate email and password
-	if isValidEmail := validator.IsValidEmail(email); !isValidEmail {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":  http.StatusBadRequest,
-			"error": "Invalid email address",
-		})
-		return
-	}
-
-	isEmailExist, err := a.isEmailExist(email)
+	data, err := a.userManagementService.RegisterHandler(ctx, c.PostForm("email"), c.PostForm("password"))
 	if err != nil {
-		log.Fatal(err.Error())
-	}
-
-	if isEmailExist {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":  http.StatusBadRequest,
-			"error": "Email already exist",
+			"error": err.Error(),
 		})
 		return
 	}
-
-	// Hashing password
-	unsalted := []byte(password)
-	saltedPassword, _ := bcrypt.GenerateFromPassword(unsalted, bcrypt.DefaultCost)
-
-	// Add addtional data
-	userUid, _ := uuid.NewV4()
-	data.UserUid = userUid.String()
-	data.Email = email
-	data.Password = string(saltedPassword)
-	data.CreatedAt = time.Now().Format(time.RFC3339)
-	data.CredentialType = BasicUser
-	data.IsAdmin = false
-	data.IsEmailVerified = false
-
-	a.collection.InsertOne(ctx, data)
-
-	// Omit password from http response
-	data.Password = ""
 
 	c.JSON(http.StatusOK, data)
 }
 
-func (a *AuthMiddleware) loginHandler(ctx context.Context, email string, password string) (bool, models.Credential, string) {
-	var data models.Credential
-
-	filter := bson.D{{"email", email}}
-
-	errMongo := a.collection.FindOne(ctx, filter).Decode(&data)
-	if errMongo != nil {
-		return false, models.Credential{}, "Email is not registered"
-	}
-
-	errBcrypt := bcrypt.CompareHashAndPassword([]byte(data.Password), []byte(password))
-	if errBcrypt != nil {
-		return false, models.Credential{}, "Wrong password"
-	}
-	return true, data, ""
-}
-
-func (a *AuthMiddleware) Login(c *gin.Context) {
+func (a *authMiddleware) Login(c *gin.Context) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	checkLogin, data, errLogin := a.loginHandler(ctx, c.PostForm("email"), c.PostForm("password"))
-	if !checkLogin {
+	data, errLoginHandler := a.userManagementService.LoginHandler(ctx, c.PostForm("email"), c.PostForm("password"))
+	if errLoginHandler != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":  http.StatusBadRequest,
-			"error": errLogin,
+			"error": errLoginHandler.Error(),
 		})
+		return
 	}
 
 	data.Password = ""
@@ -206,114 +112,7 @@ func (a *AuthMiddleware) Login(c *gin.Context) {
 	})
 }
 
-func (a *AuthMiddleware) RequestOauthLogin(c *gin.Context) {
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	challange := strings.TrimSpace(c.Query("login_challenge"))
-	fmt.Println(challange)
-	fmt.Println("Hello")
-
-	params := admin.NewGetLoginRequestParams()
-	params.WithContext(ctx)
-	params.SetLoginChallenge(challange)
-
-	responseGetLoginRequest, err := a.hydraAdmin.GetLoginRequest(params)
-	if err != nil {
-		switch e := err.(type) {
-		case (*admin.GetLoginRequestConflict):
-			fmt.Println("A")
-		case (*admin.GetLoginRequestBadRequest):
-			fmt.Println("B")
-		case (*admin.GetLoginRequestNotFound):
-			fmt.Println("C")
-		case (*admin.GetLoginRequestInternalServerError):
-			fmt.Println("D")
-		default:
-			fmt.Println("Default", e)
-		}
-		c.String(http.StatusBadRequest, "%s", "Failed getting login request from ory hydra", err.Error())
-		log.Printf("verbose error info: %#v", err)
-
-		return
-	}
-
-	skip := false
-	if responseGetLoginRequest.GetPayload().Skip != nil {
-		skip = *responseGetLoginRequest.GetPayload().Skip
-	}
-
-	if skip {
-		loginAcceptParams := admin.NewAcceptLoginRequestParams()
-		loginAcceptParams.WithContext(ctx)
-		loginAcceptParams.SetLoginChallenge(challange)
-		loginAcceptParams.SetBody(&hydraModels.AcceptLoginRequest{
-			Subject: responseGetLoginRequest.GetPayload().Subject,
-		})
-
-		responseLoginAccept, err := a.hydraAdmin.AcceptLoginRequest(loginAcceptParams)
-		if err != nil {
-			c.String(http.StatusBadGateway, "%s", "Cannot accept login request")
-			return
-		}
-
-		c.Redirect(http.StatusFound, *responseLoginAccept.GetPayload().RedirectTo)
-		return
-	}
-
-	c.HTML(http.StatusOK, "oauth2_login.tmpl", gin.H{
-		"checkEmailPassword": false,
-		"url":                "http://localhost:8000/v1/oauth2/login",
-	})
-}
-
-func (a *AuthMiddleware) OauthLogin(c *gin.Context) {
-	challange := c.PostForm("login_challenge")
-	email := c.PostForm("email")
-	password := c.PostForm("password")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	checkLogin, data, _ := a.loginHandler(ctx, email, password)
-
-	if !checkLogin {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "login failed",
-		})
-		return
-	}
-
-	loginAcceptParams := admin.NewAcceptLoginRequestParams()
-	loginAcceptParams.WithContext(ctx)
-	loginAcceptParams.SetLoginChallenge(challange)
-	loginAcceptParams.SetBody(&hydraModels.AcceptLoginRequest{
-		Subject:     &email,
-		Remember:    true,
-		RememberFor: 3600,
-	})
-
-	acceptLoginResponse, err := a.hydraAdmin.AcceptLoginRequest(loginAcceptParams)
-	if err != nil {
-		// if error, redirects to ...
-		str := fmt.Sprint("error AcceptLoginRequest", err.Error())
-		c.String(http.StatusUnprocessableEntity, str)
-	}
-
-	data.Password = ""
-	c.JSON(http.StatusOK, gin.H{
-		"url_redirect": *acceptLoginResponse.GetPayload().RedirectTo,
-	})
-
-	// c.JSON(http.StatusOK, gin.H{
-	// 	"url_redirect": "https://www.microsoft.com",
-	// })
-	fmt.Println("login challange: ", challange)
-	// c.JSON(http.StatusOK, data)
-}
-
-func (a *AuthMiddleware) Logout(c *gin.Context) {
+func (a *authMiddleware) Logout(c *gin.Context) {
 
 	authHeader := strings.Trim(c.GetHeader("Authorization"), " ")
 	authToken := strings.Split(authHeader, " ")[1]
@@ -337,121 +136,24 @@ func (a *AuthMiddleware) Logout(c *gin.Context) {
 	c.String(http.StatusOK, "%s", "Logged out")
 }
 
-func (a *AuthMiddleware) RequestOauthConsent(c *gin.Context) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	consentChallange := c.Query("consent_challenge")
-	if consentChallange == "" {
-		c.String(http.StatusBadRequest, "%s", "Bad Request")
-	}
-
-	consentGetParams := admin.NewGetConsentRequestParams()
-	consentGetParams.WithContext(ctx)
-	consentGetParams.SetConsentChallenge(consentChallange)
-
-	consentGetResponse, err := a.hydraAdmin.GetConsentRequest(consentGetParams)
-	if err != nil {
-		c.String(http.StatusBadRequest, "%s", "Failed getting params request from ory hydra")
-		return
-	}
-
-	if consentGetResponse.GetPayload().Skip {
-		consentAcceptBody := &hydraModels.AcceptConsentRequest{
-			GrantAccessTokenAudience: consentGetResponse.GetPayload().RequestedAccessTokenAudience,
-			GrantScope:               consentGetResponse.GetPayload().RequestedScope,
-		}
-
-		consentAcceptParams := admin.NewAcceptConsentRequestParams()
-		consentAcceptParams.WithConsentChallenge(consentChallange)
-		consentAcceptParams.WithContext(ctx)
-		consentAcceptParams.WithBody(consentAcceptBody)
-
-		consentAcceptResponse, err := a.hydraAdmin.AcceptConsentRequest(consentAcceptParams)
-		if err != nil {
-			str := fmt.Sprint("error AcceptConsentRequest", err.Error())
-			c.String(http.StatusUnprocessableEntity, "%s", str)
-		}
-
-		c.Redirect(http.StatusFound, *consentAcceptResponse.GetPayload().RedirectTo)
-
-	}
-	c.HTML(http.StatusOK, "consent_page.tmpl", gin.H{
-		"url":         "http://localhost:8000/v1/oauth2/authorize",
-		"client_name": consentGetResponse.GetPayload().Client.ClientName,
-		"subject":     consentGetResponse.GetPayload().Subject,
-	})
-}
-
-func (a *AuthMiddleware) OauthConsent(c *gin.Context) {
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	consentChallange := c.PostForm("consent_challenge")
-	isGranted, _ := strconv.ParseBool(c.PostForm("scope_granted"))
-	subject := c.PostForm("subject")
-	client_name := c.PostForm("client_name")
-
-	fmt.Println(consentChallange, isGranted, subject, client_name)
-
-	consentGetParams := admin.NewGetConsentRequestParams()
-	consentGetParams.WithContext(ctx)
-	consentGetParams.SetConsentChallenge(consentChallange)
-
-	consentGetResponse, err := a.hydraAdmin.GetConsentRequest(consentGetParams)
-	if err != nil {
-		// if error, redirects to ...
-		str := fmt.Sprint("error GetConsentRequest", err.Error())
-		c.String(http.StatusUnprocessableEntity, str)
-	}
-
-	if !isGranted {
-		consentRejectParams := admin.NewRejectConsentRequestParams()
-		consentRejectParams.WithContext(ctx)
-		consentRejectParams.SetConsentChallenge(consentChallange)
-		consentRejectParams.SetBody(&hydraModels.RejectRequest{
-			Error:            "access_denied",
-			ErrorDescription: "The resource owner denied the request",
-		})
-
-		consentRejectResponse, errRejectConsent := a.hydraAdmin.RejectConsentRequest(consentRejectParams)
-		if errRejectConsent != nil {
-			str := fmt.Sprint("error RejectConsentRequest", errRejectConsent.Error())
-			c.String(http.StatusUnprocessableEntity, str)
-			fmt.Println(errRejectConsent.Error())
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"url_redirect": consentRejectResponse.GetPayload().RedirectTo,
-		})
-		fmt.Println("Not allowed")
-		return
-	}
-
-	consentAcceptBody := &hydraModels.AcceptConsentRequest{
-		GrantAccessTokenAudience: consentGetResponse.GetPayload().RequestedAccessTokenAudience,
-		GrantScope:               consentGetResponse.GetPayload().RequestedScope,
-	}
-
-	consentAcceptParams := admin.NewAcceptConsentRequestParams()
-	consentAcceptParams.WithContext(ctx)
-	consentAcceptParams.WithConsentChallenge(consentChallange)
-	consentAcceptParams.WithBody(consentAcceptBody)
-
-	consentAcceptResponse, err := a.hydraAdmin.AcceptConsentRequest(consentAcceptParams)
-	if err != nil {
-		str := fmt.Sprint("error AcceptConsentRequest", err.Error())
-		c.String(http.StatusUnprocessableEntity, str)
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"url_redirect": consentAcceptResponse.GetPayload().RedirectTo,
-	})
-}
-
-func (a *AuthMiddleware) ValidateToken(mode bool) gin.HandlerFunc {
+func (a *authMiddleware) ValidateToken(mode bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := strings.Trim(c.GetHeader("Authorization"), " ")
+		if len(authHeader) < 2 {
+			if !mode {
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"code":  http.StatusUnauthorized,
+					"error": "No JWT Token provided 1",
+				})
+				return
+			}
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"code":  http.StatusUnauthorized,
+				"error": "No JWT Token provided",
+			})
+			return
+		}
+
 		authToken := strings.Split(authHeader, " ")[1]
 
 		isInvalidated := a.isInvalidatedToken(authToken)
@@ -510,7 +212,7 @@ func (a *AuthMiddleware) ValidateToken(mode bool) gin.HandlerFunc {
 	}
 }
 
-func (a *AuthMiddleware) isInvalidatedToken(token string) bool {
+func (a *authMiddleware) isInvalidatedToken(token string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -526,7 +228,7 @@ func (a *AuthMiddleware) isInvalidatedToken(token string) bool {
 	return false
 }
 
-func (a *AuthMiddleware) invalidateToken(jwt string, refreshToken string, email string) (bool, error) {
+func (a *authMiddleware) invalidateToken(jwt string, refreshToken string, email string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -544,7 +246,7 @@ func (a *AuthMiddleware) invalidateToken(jwt string, refreshToken string, email 
 	return true, nil
 }
 
-func (a *AuthMiddleware) hashToken(token string) string {
+func (a *authMiddleware) hashToken(token string) string {
 	hashGen := sha1.New()
 
 	hashGen.Write([]byte(token))
@@ -554,7 +256,7 @@ func (a *AuthMiddleware) hashToken(token string) string {
 	return encodedBase64Hash
 }
 
-func (a *AuthMiddleware) RefreshToken(c *gin.Context) {
+func (a *authMiddleware) RefreshToken(c *gin.Context) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -626,67 +328,22 @@ func (a *AuthMiddleware) RefreshToken(c *gin.Context) {
 
 }
 
-func (a *AuthMiddleware) isEmailExist(email string) (bool, error) {
-	var isExist bool = false
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	opts := options.Count().SetMaxTime(2 * time.Second)
-	count, err := a.collection.CountDocuments(ctx, bson.D{{"email", email}}, opts)
-
-	if count > 0 && err == nil {
-		isExist = true
-	}
-
-	return isExist, err
-}
-
-func (a *AuthMiddleware) UpdatePassword(c *gin.Context) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	userUid := c.GetString("userUid")
-
-	unsalted := []byte(c.PostForm("password"))
-	saltedPassword, _ := bcrypt.GenerateFromPassword(unsalted, bcrypt.DefaultCost)
-
-	var updatedDocument bson.M
-	err := a.collection.FindOneAndUpdate(
-		ctx,
-		bson.D{{"user_uid", userUid}},
-		bson.D{{"$set", bson.D{{"password", string(saltedPassword)}}}},
-		options.FindOneAndUpdate().SetMaxTime(2*time.Second),
-		options.FindOneAndUpdate().SetUpsert(false),
-	).Decode(&updatedDocument)
-
-	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			c.String(http.StatusBadRequest, "%s", "Bad request")
-			return
-		}
-		log.Fatal(err.Error())
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code":    http.StatusOK,
-		"message": "Password updated",
-	})
-}
-
-func (a *AuthMiddleware) RequestResetPassword(c *gin.Context) {
+func (a *authMiddleware) RequestResetPassword(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	email := c.PostForm("email")
 
-	isExist, err := a.isEmailExist(email)
+	isExist, err := a.userManagementService.IsEmailExist(email)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
 
 	if !isExist {
-		c.String(http.StatusBadRequest, "%s", "Bad Request")
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":  http.StatusBadRequest,
+			"error": "Email is not registered",
+		})
 		return
 	}
 
@@ -701,7 +358,7 @@ func (a *AuthMiddleware) RequestResetPassword(c *gin.Context) {
 
 	// Generate reset link page
 	var link strings.Builder
-	link.WriteString("localhost:4000/v1/auth/reset_password?token=")
+	link.WriteString("localhost:8000/v1/auth/reset_password?token=")
 	link.WriteString(guid.String())
 	link.WriteString("&email=")
 	link.WriteString(email)
@@ -709,7 +366,7 @@ func (a *AuthMiddleware) RequestResetPassword(c *gin.Context) {
 	c.JSON(200, gin.H{"url_reset": link.String()})
 }
 
-func (a *AuthMiddleware) GetResetPassword(c *gin.Context) {
+func (a *authMiddleware) GetResetPassword(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -742,7 +399,7 @@ func (a *AuthMiddleware) GetResetPassword(c *gin.Context) {
 	})
 }
 
-func (a *AuthMiddleware) SetResetPassword(c *gin.Context) {
+func (a *authMiddleware) SetResetPassword(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -750,12 +407,12 @@ func (a *AuthMiddleware) SetResetPassword(c *gin.Context) {
 	password := c.PostForm("password")
 	token := c.PostForm("token")
 
-	val, err := a.rdb.Get(ctx, email).Result()
+	val, errRedis := a.rdb.Get(ctx, email).Result()
 
-	if err == redis.Nil {
+	if errRedis == redis.Nil {
 		c.String(http.StatusBadRequest, "%s", "Bad Request")
 		return
-	} else if err != nil {
+	} else if errRedis != nil {
 		log.Fatal("err.Error()")
 	}
 
@@ -764,23 +421,13 @@ func (a *AuthMiddleware) SetResetPassword(c *gin.Context) {
 		return
 	}
 
-	unsalted := []byte(password)
-	saltedPassword, _ := bcrypt.GenerateFromPassword(unsalted, bcrypt.DefaultCost)
-
-	var updatedDocument bson.M
-	errMongo := a.collection.FindOneAndUpdate(
-		ctx,
-		bson.D{{"email", email}},
-		bson.D{{"$set", bson.D{{"password", string(saltedPassword)}}}},
-		options.FindOneAndUpdate().SetMaxTime(2*time.Second),
-		options.FindOneAndUpdate().SetUpsert(false),
-	).Decode(&updatedDocument)
-
-	if errMongo != nil {
-		if err == mongo.ErrNoDocuments {
-			c.String(http.StatusBadRequest, "%s", "Bad Request")
-		}
-		log.Fatal(err.Error())
+	err := a.userManagementService.UpdatePasswordHandler(ctx, email, password)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":  http.StatusBadRequest,
+			"error": err.Error(),
+		})
+		return
 	}
 
 	_, errRedis2 := a.rdb.Del(ctx, email).Result()
@@ -789,9 +436,34 @@ func (a *AuthMiddleware) SetResetPassword(c *gin.Context) {
 		c.String(http.StatusBadRequest, "%s", "Bad Request")
 		return
 	} else if errRedis2 != nil {
-		log.Fatal("err.Error()")
+		log.Fatal(err.Error())
 	}
 
-	c.String(http.StatusOK, "%s", "Password Updated")
+	c.JSON(http.StatusOK, gin.H{
+		"code":    http.StatusOK,
+		"message": "Password updated",
+	})
 
+}
+
+func (a *authMiddleware) UpdatePassword(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	userUid := c.GetString("userUid")
+	password := c.PostForm("password")
+
+	err := a.userManagementService.UpdatePasswordHandler(ctx, userUid, password)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":  http.StatusBadRequest,
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    http.StatusOK,
+		"message": "Password updated",
+	})
 }
