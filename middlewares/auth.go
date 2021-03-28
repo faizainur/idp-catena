@@ -5,7 +5,6 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -127,7 +126,6 @@ func (a *authMiddleware) Logout(c *gin.Context) {
 	}
 
 	email := c.GetString("email")
-	fmt.Println(email)
 
 	status, err := a.invalidateToken(authToken, refreshToken, email)
 	if !status {
@@ -179,13 +177,11 @@ func (a *authMiddleware) ValidateToken(mode bool) gin.HandlerFunc {
 				c.JSON(http.StatusUnauthorized, gin.H{
 					"code":     http.StatusUnauthorized,
 					"is_valid": false,
-					"halo":     "halo",
 				})
 				return
 			}
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"code":     http.StatusUnauthorized,
-				"halo":     "halo",
 				"is_valid": false,
 			})
 			return
@@ -286,9 +282,6 @@ func (a *authMiddleware) RefreshToken(c *gin.Context) {
 		log.Fatal(err.Error())
 	}
 
-	// fmt.Println(val, userUid, email)
-
-	// data := models.Credential{}
 	var data models.Credential
 	{
 		err := json.Unmarshal([]byte(val), &data)

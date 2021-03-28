@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"crypto/rsa"
-	"log"
 	"time"
 
 	"github.com/lestrrat-go/jwx/jwa"
@@ -57,15 +56,13 @@ func (j *JWTService) ValidateToken(token []byte) (bool, map[string]interface{}) 
 	)
 
 	if err != nil {
-		log.Fatal(err.Error())
 		return false, nil
 	}
 
 	payloadMap, err := payload.AsMap(ctx)
 	if err != nil {
-		log.Fatal(err.Error())
+		panic(err)
 	}
-	// fmt.Println(payloadMap["userUid"])
 	return true, payloadMap
 
 }
