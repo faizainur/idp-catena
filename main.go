@@ -22,12 +22,23 @@ import (
 var (
 	collections = make(map[string]*mongo.Collection)
 	redisClient *redis.Client
+
+	redisHost      string
+	mongoDbUri     string
+	hydraAdminHost string
 )
 
 func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	redisHost = os.Getenv("REDIS_HOST")
+	mongoDbUri = os.Getenv("MONGODB_URI")
+	hydraAdminHost = os.Getenv("HYDRA_ADMIN_HOST") // example "localhost:9001"
+
+	fmt.Println("Redis Host = ", redisHost)
+	fmt.Println("MongoDB URI = ", mongoDbUri)
 
 	mongoClient, err := setupMongoDb(ctx)
 	if err != nil {
@@ -51,10 +62,10 @@ func setupRouter() *gin.Engine {
 	}
 
 	jwtService := services.JWTService{PrivateKey: privKey}
-	userManagementService := services.UserManagement{collections["credentials"]}
+	userManagementService := services.UserManagement{Collection: collections["credentials"]}
 
 	authMiddleware := middlewares.NewAuthMiddleware(&jwtService, &userManagementService, redisClient)
-	oauth2Middleware := middlewares.NewOauth2Middleware(&userManagementService)
+	oauth2Middleware := middlewares.NewOauth2Middleware(&userManagementService, hydraAdminHost)
 
 	router := gin.Default()
 	router.Use(CORSMiddleware())
@@ -95,7 +106,7 @@ func setupRouter() *gin.Engine {
 func setupMongoDb(ctx context.Context) (*mongo.Client, error) {
 
 	// Load URI from OS variabel environment
-	dbConfig := utils.DbUtils{ConnectionString: os.Getenv("MONGODB_URI")}
+	dbConfig := utils.DbUtils{ConnectionString: mongoDbUri}
 	client, err := dbConfig.Connect(ctx)
 
 	if err == nil {
@@ -114,7 +125,7 @@ func setupMongoDb(ctx context.Context) (*mongo.Client, error) {
 
 func setupRedis() *redis.Client {
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
+		Addr:     redisHost,
 		Password: "",
 		DB:       0,
 	})

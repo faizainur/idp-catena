@@ -12,6 +12,7 @@ RUN apk --no-cache add ca-certificates
 COPY --from=builder /src/app /app
 COPY --from=builder /src/templates /templates
 ENV MONGODB_URI=""
+ENV REDIS_HOST=""
 ENTRYPOINT ./app
 LABEL Name=idpcatena Version=0.0.1
 EXPOSE 4000

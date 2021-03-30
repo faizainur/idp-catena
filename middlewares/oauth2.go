@@ -26,7 +26,7 @@ type oauth2Middleware struct {
 	userManagementService *services.UserManagement
 }
 
-func NewOauth2Middleware(u *services.UserManagement) *oauth2Middleware {
+func NewOauth2Middleware(u *services.UserManagement, hydraAdminHost string) *oauth2Middleware {
 	// adminUrl, _ := url.Parse("http://localhost:9001")
 	// hydraAdmin := client.NewHTTPClientWithConfig(nil, &client.TransportConfig{
 	// 	Schemes:  []string{adminUrl.Scheme},
@@ -47,7 +47,7 @@ func NewOauth2Middleware(u *services.UserManagement) *oauth2Middleware {
 		},
 		Timeout: 10 * time.Second,
 	}
-	transport := httptransport.NewWithClient("localhost:9001", "/", []string{"https"}, skipTlsClient)
+	transport := httptransport.NewWithClient(hydraAdminHost, "/", []string{"https"}, skipTlsClient)
 	hydra := client.New(transport, nil)
 
 	return &oauth2Middleware{
