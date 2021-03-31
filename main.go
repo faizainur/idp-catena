@@ -51,7 +51,11 @@ func main() {
 	r := setupRouter()
 
 	//Start server
-	r.Run(":8000")
+	var port string
+	if os.Getenv("PORT_LISTEN") != "" {
+		port = fmt.Sprintf(":%s", os.Getenv("PORT_LISTEN"))
+	}
+	r.Run(port)
 }
 
 func setupRouter() *gin.Engine {

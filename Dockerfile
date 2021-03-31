@@ -13,6 +13,11 @@ COPY --from=builder /src/app /app
 COPY --from=builder /src/templates /templates
 ENV MONGODB_URI=""
 ENV REDIS_HOST=""
+ENV HYDRA_ADMIN_HOST=""
+ENV ENABLE_TLS_VERIFICATION=""
+ENV PORT_LISTEN=""
+ENV OAUTH_LOGIN_CALLBACK=""
+ENV OAUTH_CONSENT_CALLBACK=""
 ENTRYPOINT ./app
 LABEL Name=idpcatena Version=0.0.1
 EXPOSE 4000

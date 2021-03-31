@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -27,31 +29,43 @@ type oauth2Middleware struct {
 }
 
 func NewOauth2Middleware(u *services.UserManagement, hydraAdminHost string) *oauth2Middleware {
-	// adminUrl, _ := url.Parse("http://localhost:9001")
-	// hydraAdmin := client.NewHTTPClientWithConfig(nil, &client.TransportConfig{
-	// 	Schemes:  []string{adminUrl.Scheme},
-	// 	Host:     adminUrl.Host,
-	// 	BasePath: adminUrl.Path,
-	// })
 
-	// publicUrl, _ := url.Parse("http://localhost:9000/")
-	// hydraPublic := client.NewHTTPClientWithConfig(nil, &client.TransportConfig{
-	// 	Schemes:  []string{publicUrl.Scheme},
-	// 	Host:     publicUrl.Host,
-	// 	BasePath: publicUrl.Path,
-	// })
+	var (
+		hydraAdmin            *client.OryHydra
+		enableTlsVerification string
+	)
 
-	skipTlsClient := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-		Timeout: 10 * time.Second,
+	// Get ENABLE_TLS_VERIFICATION environment variable
+	enableTlsVerification = os.Getenv("ENABLE_TLS_VERIFICATION")
+
+	// If environment variable is not set
+	if enableTlsVerification == "" {
+		// Set default value "0"
+		// Default : Disable TLS verification
+		enableTlsVerification = "0"
 	}
-	transport := httptransport.NewWithClient(hydraAdminHost, "/", []string{"https"}, skipTlsClient)
-	hydra := client.New(transport, nil)
+
+	if enableTlsVerification == "0" {
+		skipTlsClient := &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			},
+			Timeout: 10 * time.Second,
+		}
+		transport := httptransport.NewWithClient(hydraAdminHost, "/", []string{"https"}, skipTlsClient)
+		hydraAdmin = client.New(transport, nil)
+
+	} else if enableTlsVerification == "1" {
+		adminUrl, _ := url.Parse(hydraAdminHost)
+		hydraAdmin = client.NewHTTPClientWithConfig(nil, &client.TransportConfig{
+			Schemes:  []string{adminUrl.Scheme},
+			Host:     adminUrl.Host,
+			BasePath: adminUrl.Path,
+		})
+	}
 
 	return &oauth2Middleware{
-		hydraAdmin:            hydra.Admin,
+		hydraAdmin:            hydraAdmin.Admin,
 		userManagementService: u,
 	}
 }
@@ -114,7 +128,8 @@ func (o *oauth2Middleware) RequestOauthLogin(c *gin.Context) {
 
 	c.HTML(http.StatusOK, "oauth2_login.tmpl", gin.H{
 		"checkEmailPassword": false,
-		"url":                "http://localhost:8000/v1/oauth2/login",
+		// "url":                "http://localhost:8000/v1/oauth2/login",
+		"url": os.Getenv("OAUTH_LOGIN_CALLBACK"),
 	})
 }
 
@@ -201,7 +216,8 @@ func (o *oauth2Middleware) RequestOauthConsent(c *gin.Context) {
 	}
 	fmt.Println(consentGetResponse.GetPayload().Client.ClientName)
 	c.HTML(http.StatusOK, "consent_page.tmpl", gin.H{
-		"url":         "http://localhost:8000/v1/oauth2/authorize",
+		// "url":         "http://localhost:8000/v1/oauth2/authorize",
+		"url":         os.Getenv("OAUTH_CONSENT_CALLBACK"),
 		"client_name": consentGetResponse.GetPayload().Client.ClientName,
 		"subject":     consentGetResponse.GetPayload().Subject,
 	})
