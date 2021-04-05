@@ -75,7 +75,7 @@ func setupRouter() *gin.Engine {
 	router.Use(CORSMiddleware())
 	router.LoadHTMLGlob("templates/*")
 
-	v1 := router.Group("/v1")
+	v1 := router.Group("/api/v1")
 	{
 		v1.GET("/ping", ping)
 		v1.GET("/test", authMiddleware.ValidateToken(true), securedEndpoint)
