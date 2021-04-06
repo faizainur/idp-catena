@@ -350,7 +350,7 @@ func (a *authMiddleware) RequestResetPassword(c *gin.Context) {
 
 	// Generate reset link page
 	var link strings.Builder
-	link.WriteString("localhost:8000/v1/auth/reset_password?token=")
+	link.WriteString("http://http://ec2-54-204-24-52.compute-1.amazonaws.com/api/v1/auth/reset_password?token=")
 	link.WriteString(guid.String())
 	link.WriteString("&email=")
 	link.WriteString(email)
