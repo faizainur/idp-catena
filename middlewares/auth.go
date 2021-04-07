@@ -102,8 +102,8 @@ func (a *authMiddleware) Login(c *gin.Context) {
 		log.Fatal("Failed to set key : ", err.Error())
 	}
 
-	c.SetCookie("refreshToken", refreshToken.String(), cookieDuration, "/v1/auth/refresh_token", "localhost", false, true)
-	c.SetCookie("refreshToken", refreshToken.String(), cookieDuration, "/v1/auth/logout", "localhost", false, true)
+	c.SetCookie("refreshToken", refreshToken.String(), cookieDuration, "/v1/auth/refresh_token", "api.catena.id", false, true)
+	c.SetCookie("refreshToken", refreshToken.String(), cookieDuration, "/v1/auth/logout", "api.catena.id", false, true)
 	c.JSON(http.StatusOK, gin.H{
 		"code":      http.StatusOK,
 		"message":   "User logged in",
