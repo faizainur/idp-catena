@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -350,7 +351,9 @@ func (a *authMiddleware) RequestResetPassword(c *gin.Context) {
 
 	// Generate reset link page
 	var link strings.Builder
-	link.WriteString("http://ec2-54-204-24-52.compute-1.amazonaws.com/api/v1/auth/reset_password?token=")
+	resetUri := os.Getenv("RESET_PASSWORD_URI")
+	link.WriteString(resetUri)
+	link.WriteString("?token=")
 	link.WriteString(guid.String())
 	link.WriteString("&email=")
 	link.WriteString(email)
