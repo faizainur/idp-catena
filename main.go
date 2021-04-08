@@ -39,6 +39,7 @@ func main() {
 
 	fmt.Println("Redis Host = ", redisHost)
 	fmt.Println("MongoDB URI = ", mongoDbUri)
+	fmt.Println("HYDRA ADMIN HOST = ", hydraAdminHost)
 
 	mongoClient, err := setupMongoDb(ctx)
 	if err != nil {

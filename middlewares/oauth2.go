@@ -297,11 +297,26 @@ func (o *oauth2Middleware) CreateOauthClient(c *gin.Context) {
 	if errUuid != nil {
 		log.Fatal(errUuid.Error())
 	}
+	backChannelLogoutSessionRequired, _ := strconv.ParseBool(c.PostForm("backchannel_logout_session_required"))
+	frontChannelLogoutSessionRequired, _ := strconv.ParseBool(c.PostForm("backchannel_logout_session_required"))
 
 	createOauthClientParams := admin.NewCreateOAuth2ClientParams()
 	createOauthClientParams.WithBody(&hydraModels.OAuth2Client{
-		ClientName: c.PostForm("client_name"),
-		ClientID:   uuidGemerator.String(),
+		AllowedCorsOrigins:                c.PostFormArray("allowed_cors_origins"),
+		Audience:                          c.PostFormArray("audience"),
+		BackchannelLogoutSessionRequired:  backChannelLogoutSessionRequired,
+		BackchannelLogoutURI:              c.PostForm("backchannel_logout_uri"),
+		ClientID:                          uuidGemerator.String(),
+		ClientName:                        c.PostForm("client_name"),
+		FrontchannelLogoutSessionRequired: frontChannelLogoutSessionRequired,
+		FrontchannelLogoutURI:             c.PostForm("frontchannel_logout_uri"),
+		GrantTypes:                        c.PostFormArray("grant_types"),
+		PostLogoutRedirectUris:            c.PostFormArray("post_logout_redirect_uris"),
+		RedirectUris:                      c.PostFormArray("redirect_uris"),
+		RequestUris:                       c.PostFormArray("request_uris"),
+		ResponseTypes:                     c.PostFormArray("response_types"),
+		Scope:                             c.PostForm("scope"),
+		SubjectType:                       c.PostForm("subject_type"),
 	})
 
 	result, err := o.hydraAdmin.CreateOAuth2Client(createOauthClientParams)
