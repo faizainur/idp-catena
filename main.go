@@ -149,11 +149,11 @@ func CORSMiddleware() gin.HandlerFunc {
 		fmt.Println(origin)
 
 		if origin == "https://dashboard.catena.id" {
-			c.Writer.Header().Set("Access-Control-Allow-Origin", "dashboard.catena.id")
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 		} else if origin == "https://api.catena.id" {
-			c.Writer.Header().Set("Access-Control-Allow-Origin", "api.catena.id")
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 		} else if origin == "https://catena.id" {
-			c.Writer.Header().Set("Access-Control-Allow-Origin", "catena.id")
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 		} else {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		}
